@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Juligram Chess</title>
+<style>
+:root { --bg:#eef5ea; --fg:#14301c; --light:#f1ecd2; --dark:#5b8c5a; --accent:#2e7d32; --dot:rgba(20,48,28,.35); --last:rgba(255,235,59,.45); }
+body.night { --bg:#0e1f14; --fg:#d9efd9; --light:#8fb58f; --dark:#2f5d3a; --accent:#66bb6a; --dot:rgba(0,0,0,.4); --last:rgba(255,235,59,.35); }
+* { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+body { margin:0; font-family:system-ui,sans-serif; background:var(--bg); color:var(--fg); }
+.screen { display:none; padding:12px; max-width:520px; margin:0 auto; }
+.screen.on { display:block; }
+h1 { margin:8px 0; font-size:24px; color:var(--accent); }
+button { background:var(--accent); color:#fff; border:0; border-radius:10px; padding:12px 16px; font-size:16px; margin:4px 4px 4px 0; }
+button.ghost { background:transparent; color:var(--fg); border:1px solid var(--accent); }
+input, select { font-size:16px; padding:10px; border-radius:8px; border:1px solid var(--accent); background:var(--bg); color:var(--fg); width:100%; margin:4px 0; }
+input[type=checkbox] { width:auto; }
+#board { display:grid; grid-template-columns:repeat(8,1fr); width:100%; aspect-ratio:1; border-radius:6px; overflow:hidden; user-select:none; }
+.sq { position:relative; display:flex; align-items:center; justify-content:center; font-size:min(9vw,44px); }
+.sq.l { background:var(--light); } .sq.d { background:var(--dark); }
+.sq.last { box-shadow:inset 0 0 0 100px var(--last); }
+.sq.sel { outline:3px solid var(--accent); outline-offset:-3px; }
+.sq.pre { box-shadow:inset 0 0 0 100px rgba(244,67,54,.35); }
+.dot { position:absolute; width:30%; height:30%; border-radius:50%; background:var(--dot); }
+.ring { position:absolute; inset:6%; border-radius:50%; border:4px solid var(--dot); }
+.bar { display:flex; justify-content:space-between; align-items:center; padding:8px 4px; font-size:18px; }
+.clock { font-variant-numeric:tabular-nums; font-size:24px; padding:4px 10px; border-radius:8px; background:var(--dark); color:#fff; }
+.clock.run { background:var(--accent); }
+.row { display:flex; gap:6px; flex-wrap:wrap; }
+table { width:100%; border-collapse:collapse; } td,th { padding:6px; border-bottom:1px solid var(--dark); text-align:left; }
+.small { font-size:13px; opacity:.8; }
+</style>
+</head>
+<body>
+
+<div id="lobby" class="screen on">
+  <h1>Juligram Chess</h1>
+  <input id="name" placeholder="Your display name" maxlength="16">
+  <div class="row">
+    <button id="hostBtn">Host a game</button>
+    <button id="joinBtn" class="ghost">Join a game</button>
+  </div>
+  <input id="addr" placeholder="Host address" value="192.168.43.1">
+  <div class="small" id="hostInfo"></div>
+  <h3>Settings</h3>
+  <label><input type="checkbox" id="optDots" checked> Show legal moves</label><br>
+  <label><input type="checkbox" id="optSound" checked> Sound</label><br>
+  <label><input type="checkbox" id="optNight"> Dark theme</label>
+  <h3>Leaderboard</h3>
+  <table id="lb"></table>
+  <button id="resetLb" class="ghost">Reset leaderboard</button>
+</div>
+
+<div id="room" class="screen">
+  <h1>Room</h1>
+  <div id="roster"></div>
+  <h3>Time control</h3>
+  <select id="tc">
+    <option value="60,0">1+0 Bullet</option>
+    <option value="180,2">3+2 Blitz</option>
+    <option value="300,0" selected>5+0 Blitz</option>
+    <option value="600,0">10+0 Rapid</option>
+    <option value="custom">Custom</option>
+  </select>
+  <div id="customTc" style="display:none">
+    <input id="cMin" type="number" placeholder="Minutes" value="5">
+    <input id="cInc" type="number" placeholder="Increment seconds" value="0">
+  </div>
+  <div class="small">Casual: both players vote. A match is used, a mismatch is a coin flip. In a tournament the host's choice is used.</div>
+  <div class="row">
+    <button id="voteBtn">Vote and ready</button>
+    <button id="tourBtn" class="ghost" style="display:none">Start tournament</button>
+  </div>
+  <div id="roomMsg" class="small"></div>
+</div>
+
+<div id="game" class="screen">
+  <div class="bar"><span id="topName"></span><span id="topClock" class="clock">0:00</span></div>
+  <div id="board"></div>
+  <div class="bar"><span id="botName"></span><span id="botClock" class="clock">0:00</span></div>
+  <div class="row">
+    <button id="resign" class="ghost">Resign</button>
+    <button id="draw" class="ghost">Offer draw</button>
+    <button id="takeback" class="ghost">Takeback</button>
+    <button id="pgn" class="ghost">Copy PGN</button>
+  </div>
+  <div id="gameMsg" class="small"></div>
+  <div id="moves" class="small"></div>
+  <div class="row" id="afterGame" style="display:none">
+    <button id="rematch">Rematch</button>
+    <button id="leave" class="ghost">Back to lobby</button>
+  </div>
+</div>
+
+<script>
+/*CHESSJS*/
+</script>
+
+<script>
+(function(){
+'use strict';
+var PIECES = {wp:'\u2659',wn:'\u2658',wb:'\u2657',wr:'\u2656',wq:'\u2655',wk:'\u2654',bp:'\u265F',bn:'\u265E',bb:'\u265D',br:'\u265C',bq:'\u265B',bk:'\u265A'};
+var $ = function(id){ return document.getElementById(id); };
+var store = {
+  get:function(k,d){ try{ var v=localStorage.getItem('jg_'+k); return v===null?d:JSON.parse(v);}catch(e){return d;} },
+  set:function(k,v){ try{ localStorage.setItem('jg_'+k,JSON.stringify(v)); }catch(e){} }
+};
+var me = { id: Math.random().toString(36).slice(2,8), name: store.get('name','') };
+var ws = null, isHost = false, players = {};
+var chess = null, myColor = 'w';
+var clocks = {w:300000, b:300000}, inc = 0, lastTick = 0, ticker = null;
+var sel = null, premove = null, lastMove = null, over = false, ids = {w:null,b:null};
+var tour = null;
+
+$('name').value = me.name;
+$('optDots').checked = store.get('dots', true);
+$('optSound').checked = store.get('sound', true);
+$('optNight').checked = store.get('night', false);
+function applyTheme(){ document.body.classList.toggle('night', $('optNight').checked); }
+applyTheme();
+var optKeys = {optDots:'dots', optSound:'sound', optNight:'night'};
+Object.keys(optKeys).forEach(function(id){
+  $(id).onchange = function(){ store.set(optKeys[id], $(id).checked); applyTheme(); if(chess) draw(); };
+});
+$('name').onchange = function(){ me.name = $('name').value.trim() || 'Player'; store.set('name', me.name); };
+
+var actx = null;
+function beep(freq, ms){
+  if(!$('optSound').checked) return;
+  try{
+    actx = actx || new (window.AudioContext||window.webkitAudioContext)();
+    var o = actx.createOscillator(), g = actx.createGain();
+    o.frequency.value = freq; g.gain.value = 0.08;
+    o.connect(g); g.connect(actx.destination); o.start(); o.stop(actx.currentTime + ms/1000);
+  }catch(e){}
+}
+
+function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+function renderLb(){
+  var lb = store.get('lb', {}), names = Object.keys(lb);
+  names.sort(function(a,b){ return (lb[b].w*3+lb[b].d) - (lb[a].w*3+lb[a].d); });
+  var h = '<tr><th>Player</th><th>W</th><th>D</th><th>L</th></tr>';
+  names.forEach(function(n){ h += '<tr><td>'+esc(n)+'</td><td>'+lb[n].w+'</td><td>'+lb[n].d+'</td><td>'+lb[n].l+'</td></tr>'; });
+  $('lb').innerHTML = names.length ? h : '<tr><td class="small">No games yet.</td></tr>';
+}
+function record(a, b, isDraw){
+  if(!isHost) return;
+  var lb = store.get('lb', {});
+  [a, b].forEach(function(n){ lb[n] = lb[n] || {w:0,d:0,l:0}; });
+  if(isDraw){ lb[a].d++; lb[b].d++; } else { lb[a].w++; lb[b].l++; }
+  store.set('lb', lb); renderLb();
+}
+$('resetLb').onclick = function(){ store.set('lb', {}); renderLb(); };
+renderLb();
+
+function show(id){ ['lobby','room','game'].forEach(function(s){ $(s).classList.toggle('on', s===id); }); }
+function send(o){ o.from = me.id; if(ws && ws.readyState===1) ws.send(JSON.stringify(o)); }
+function connect(addr, onopen){
+  ws = new WebSocket('ws://' + addr + ':8080');
+  ws.onopen = onopen;
+  ws.onmessage = function(e){ var m; try{ m = JSON.parse(e.data); }catch(x){ return; } handle(m); };
+  ws.onclose = function(){ $('hostInfo').textContent = 'Disconnected.'; };
+  ws.onerror = function(){ $('hostInfo').textContent = 'Could not connect. Check the hotspot and address.'; };
+}
+$('hostBtn').onclick = function(){
+  me.name = $('name').value.trim() || 'Host'; store.set('name', me.name);
+  isHost = true;
+  var a = '192.168.43.1';
+  if(window.Android){
+    window.Android.startHosting();
+    var x = window.Android.localAddress();
+    if(x && x !== '0.0.0.0') a = x;
+  }
+  $('hostInfo').textContent = 'Friends open http://' + a + ':8081 on the hotspot.';
+  setTimeout(function(){
+    connect('127.0.0.1', function(){
+      players[me.id] = {name:me.name, role:'w'};
+      $('tourBtn').style.display = 'inline-block';
+      renderRoster(); show('room');
+    });
+  }, 800);
+};
+$('joinBtn').onclick = function(){
+  me.name = $('name').value.trim() || 'Player'; store.set('name', me.name);
+  isHost = false;
+  connect($('addr').value.trim(), function(){ send({type:'hello', name:me.name}); show('room'); });
+};
+
+function renderRoster(){
+  var h = '';
+  Object.keys(players).forEach(function(id){
+    var p = players[id];
+    h += '<div>'+esc(p.name)+' <span class="small">('+(p.role==='s'?'spectator':p.role==='w'?'White':'Black')+')'+(p.vote?' voted '+p.vote:'')+'</span></div>';
+  });
+  $('roster').innerHTML = h;
+}
+
+$('tc').onchange = function(){ $('customTc').style.display = $('tc').value==='custom' ? 'block':'none'; };
+function currentTc(){
+  var v = $('tc').value;
+  if(v==='custom') return {t:(+$('cMin').value||5)*60, i:+$('cInc').value||0};
+  var p = v.split(','); return {t:+p[0], i:+p[1]};
+}
+function seated(){ return Object.keys(players).filter(function(i){ return players[i].role!=='s'; }); }
+$('voteBtn').onclick = function(){
+  var tc = currentTc();
+  players[me.id] = players[me.id] || {name:me.name, role:'s'};
+  players[me.id].tc = tc; players[me.id].vote = tc.t+'+'+tc.i;
+  send({type:'vote', tc:tc});
+  renderRoster(); $('roomMsg').textContent = 'Waiting for the other player.';
+  maybeStart();
+};
+function maybeStart(){
+  if(!isHost || tour) return;
+  var s = seated();
+  if(s.length < 2) return;
+  var a = players[s[0]], b = players[s[1]];
+  if(!a.tc || !b.tc) return;
+  var same = a.tc.t===b.tc.t && a.tc.i===b.tc.i;
+  var pick = same ? a.tc : (Math.random()<0.5 ? a.tc : b.tc);
+  startGame(pick, s[0], s[1]);
+}
+function namesMap(){ var m={}; Object.keys(players).forEach(function(i){ m[i]=players[i].name; }); return m; }
+$('tourBtn').onclick = function(){
+  var all = Object.keys(players);
+  if(all.length < 3){ $('roomMsg').textContent = 'A tournament needs at least 3 players.'; return; }
+  var games = [];
+  for(var i=0;i<all.length;i++) for(var j=i+1;j<all.length;j++) games.push([all[i],all[j]]);
+  tour = {games:games, idx:0, scores:{}, tc:currentTc()};
+  all.forEach(function(id){ tour.scores[id]=0; });
+  nextTourGame();
+};
+function nextTourGame(){
+  if(!tour) return;
+  if(tour.idx >= tour.games.length){ endTournament(); return; }
+  var g = tour.games[tour.idx];
+  startGame(tour.tc, g[0], g[1]);
+}
+function endTournament(){
+  var rows = Object.keys(tour.scores).sort(function(a,b){ return tour.scores[b]-tour.scores[a]; })
+    .map(function(id){ return players[id].name+': '+tour.scores[id]; }).join(' | ');
+  var text = 'Tournament over. ' + rows;
+  $('gameMsg').textContent = text; send({type:'msg', text:text}); tour = null;
+}
+
+function startGame(tc, w, b){
+  send({type:'start', tc:tc, w:w, b:b, names:namesMap()});
+  begin(tc, w, b);
+}
+function begin(tc, w, b){
+  chess = new Chess(); over = false; sel = null; premove = null; lastMove = null;
+  ids = {w:w, b:b};
+  inc = tc.i*1000; clocks = {w:tc.t*1000, b:tc.t*1000}; lastTick = Date.now();
+  myColor = (me.id===b) ? 'b' : 'w';
+  var wn = players[w] ? players[w].name : 'White', bn = players[b] ? players[b].name : 'Black';
+  $('topName').textContent = myColor==='w' ? bn : wn;
+  $('botName').textContent = myColor==='w' ? wn : bn;
+  $('afterGame').style.display = 'none'; $('gameMsg').textContent = '';
+  show('game'); draw(); startTicker();
+}
+function fmt(ms){ ms = Math.max(0, ms); var s = Math.ceil(ms/1000); return Math.floor(s/60)+':'+('0'+(s%60)).slice(-2); }
+function startTicker(){
+  clearInterval(ticker);
+  ticker = setInterval(function(){
+    if(over || !chess) return;
+    var now = Date.now();
+    if(chess.history().length >= 2){
+      var t = chess.turn();
+      clocks[t] -= now - lastTick;
+      if(clocks[t] <= 0){ clocks[t] = 0; finish(t==='w'?'b':'w', 'on time'); }
+    }
+    lastTick = now; drawClocks();
+  }, 100);
+}
+function drawClocks(){
+  var top = myColor==='w' ? 'b' : 'w';
+  $('topClock').textContent = fmt(clocks[top]); $('botClock').textContent = fmt(clocks[myColor]);
+  var t = chess ? chess.turn() : null;
+  $('topClock').className = 'clock' + (t===top && !over ? ' run' : '');
+  $('botClock').className = 'clock' + (t===myColor && !over ? ' run' : '');
+}
+
+function draw(){
+  var b = $('board'); b.innerHTML = '';
+  var targets = {};
+  if(sel && $('optDots').checked && chess.turn()===myColor){
+    chess.moves({square:sel, verbose:true}).forEach(function(m){ targets[m.to] = m.captured ? 'ring' : 'dot'; });
+  }
+  for(var r=0;r<8;r++) for(var f=0;f<8;f++){
+    var rank = myColor==='w' ? 8-r : r+1, file = myColor==='w' ? f : 7-f;
+    var sq = 'abcdefgh'[file] + rank;
+    var d = document.createElement('div');
+    d.className = 'sq ' + (((file+rank)%2===0) ? 'd' : 'l');
+    if(lastMove && (lastMove.from===sq || lastMove.to===sq)) d.className += ' last';
+    if(sel===sq) d.className += ' sel';
+    if(premove && (premove.from===sq || premove.to===sq)) d.className += ' pre';
+    var p = chess.get(sq);
+    if(p) d.textContent = PIECES[p.color + p.type];
+    if(targets[sq]){ var e = document.createElement('div'); e.className = targets[sq]; d.appendChild(e); }
+    d.setAttribute('data-sq', sq);
+    d.onclick = onSquare;
+    b.appendChild(d);
+  }
+  $('moves').textContent = chess.history().join(' ');
+  drawClocks();
+}
+
+function isSeated(){ return me.id===ids.w || me.id===ids.b; }
+function onSquare(e){
+  if(over || !isSeated()) return;
+  var sq = e.currentTarget.getAttribute('data-sq');
+  var p = chess.get(sq);
+  var myTurn = chess.turn()===myColor;
+  if(sel){
+    if(sq===sel){ sel = null; draw(); return; }
+    if(p && p.color===myColor){ sel = sq; draw(); return; }
+    if(myTurn){ tryMove(sel, sq); }
+    else { premove = {from:sel, to:sq}; sel = null; draw(); }
+    return;
+  }
+  if(p && p.color===myColor){ sel = sq; premove = null; draw(); }
+}
+function tryMove(from, to){
+  var mv = chess.move({from:from, to:to, promotion:'q'});
+  sel = null;
+  if(!mv){ draw(); return; }
+  afterMove(mv, true);
+}
+function afterMove(mv, mine){
+  lastMove = mv;
+  if(mine){
+    clocks[mv.color] += inc;
+    send({type:'move', from:mv.from, to:mv.to, promotion:'q', clocks:clocks});
+  }
+  beep(mv.captured ? 330 : 440, 70);
+  if(chess.in_check()) beep(660, 120);
+  draw();
+  if(chess.in_checkmate()){ finish(mv.color, 'by checkmate'); return; }
+  if(chess.in_stalemate()){ finish(null, 'stalemate'); return; }
+  if(chess.in_draw()){ finish(null, 'draw'); return; }
+  if(!mine && premove && chess.turn()===myColor){
+    var pm = premove; premove = null;
+    var m2 = chess.move({from:pm.from, to:pm.to, promotion:'q'});
+    if(m2) afterMove(m2, true); else draw();
+  }
+}
+function finish(winner, why){
+  if(over) return; over = true; clearInterval(ticker);
+  var wn = players[ids.w] ? players[ids.w].name : 'White', bn = players[ids.b] ? players[ids.b].name : 'Black';
+  var msg;
+  if(winner){
+    var wName = winner==='w' ? wn : bn, lName = winner==='w' ? bn : wn;
+    msg = wName + ' wins ' + why + '.';
+    record(wName, lName, false);
+    if(tour) tour.scores[ids[winner]] += 1;
+  } else {
+    msg = 'Draw (' + why + ').';
+    record(wn, bn, true);
+    if(tour){ tour.scores[ids.w] += 0.5; tour.scores[ids.b] += 0.5; }
+  }
+  $('gameMsg').textContent = msg; $('afterGame').style.display = 'flex'; draw();
+  if(isHost && tour){ tour.idx++; setTimeout(nextTourGame, 4000); }
+}
+
+$('resign').onclick = function(){ if(over||!chess||!isSeated()) return; send({type:'resign', color:myColor}); finish(myColor==='w'?'b':'w', 'by resignation'); };
+$('draw').onclick = function(){ if(over||!isSeated()) return; send({type:'drawoffer'}); $('gameMsg').textContent = 'Draw offered.'; };
+$('takeback').onclick = function(){ if(over||!isSeated()) return; send({type:'tbreq'}); $('gameMsg').textContent = 'Takeback requested.'; };
+$('pgn').onclick = function(){
+  var t = chess.pgn();
+  try{ navigator.clipboard.writeText(t); $('gameMsg').textContent = 'PGN copied.'; }catch(e){ $('gameMsg').textContent = t; }
+};
+$('rematch').onclick = function(){
+  if(isHost){ startGame(currentTc(), ids.b, ids.w); }
+  else { send({type:'rematchreq'}); $('gameMsg').textContent = 'Rematch requested.'; }
+};
+$('leave').onclick = function(){ show('room'); };
+
+function handle(m){
+  if(m.from === me.id) return;
+  switch(m.type){
+    case 'hello':
+      if(isHost){
+        var n = seated().length;
+        players[m.from] = {name:m.name, role: n===0 ? 'w' : n===1 ? 'b' : 's'};
+        send({type:'roster', players:players});
+        renderRoster();
+      }
+      break;
+    case 'roster': players = m.players; renderRoster(); break;
+    case 'vote':
+      if(players[m.from]){ players[m.from].tc = m.tc; players[m.from].vote = m.tc.t+'+'+m.tc.i; renderRoster(); maybeStart(); }
+      break;
+    case 'start':
+      Object.keys(m.names).forEach(function(i){ players[i] = players[i] || {role:'s'}; players[i].name = m.names[i]; });
+      begin(m.tc, m.w, m.b); break;
+    case 'move':
+      if(!chess || over) break;
+      var mv = chess.move({from:m.from, to:m.to, promotion:m.promotion});
+      if(mv){ clocks = m.clocks; lastTick = Date.now(); afterMove(mv, false); }
+      break;
+    case 'resign': finish(m.color==='w'?'b':'w', 'by resignation'); break;
+    case 'drawoffer':
+      if(confirm('Opponent offers a draw. Accept?')){ send({type:'drawaccept'}); finish(null, 'agreement'); }
+      break;
+    case 'drawaccept': finish(null, 'agreement'); break;
+    case 'tbreq':
+      if(confirm('Opponent asks to take back a move. Allow?')){ chess.undo(); send({type:'tbok'}); lastMove = null; draw(); }
+      break;
+    case 'tbok': chess.undo(); lastMove = null; draw(); break;
+    case 'rematchreq': if(isHost){ startGame(currentTc(), ids.b, ids.w); } break;
+    case 'msg': $('gameMsg').textContent = m.text; break;
+  }
+}
+})();
+</script>
+</body>
+</html>
